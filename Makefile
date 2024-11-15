@@ -1,0 +1,128 @@
+include .env
+
+ROOT_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
+TOOLS_DIR := .tools
+
+# Determine OS and ARCH for some tool versions.
+OS := linux
+ARCH := amd64
+
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+	OS = darwin
+endif
+
+UNAME_P := $(shell uname -p)
+ifneq ($(filter arm%,$(UNAME_P)),)
+	ARCH = arm64
+endif
+
+# Tool Versions
+COCKROACH_VERSION = v24.2.4
+
+OS_VERSION = $(OS)
+ifeq ($(OS),darwin)
+OS_VERSION = darwin-10.9
+ifeq ($(ARCH),arm64)
+OS_VERSION = darwin-11.0
+endif
+endif
+
+COCKROACH_VERSION_FILE = cockroach-$(COCKROACH_VERSION).$(OS_VERSION)-$(ARCH)
+COCKROACH_RELEASE_URL = https://binaries.cockroachdb.com/$(COCKROACH_VERSION_FILE).tgz
+
+GCI_REPO = github.com/daixiang0/gci
+GCI_VERSION = v0.10.1
+
+OAPI_CODEGEN_REPO = github.com/deepmap/oapi-codegen
+OAPI_CODEGEN_VERSION = f4cf8f9
+
+#GOLANGCI_LINT_REPO = github.com/golangci/golangci-lint
+#GOLANGCI_LINT_VERSION = v1.51.2
+
+# go files to be checked
+GO_FILES=$(shell git ls-files '*.go')
+
+GOOS=linux
+APP_NAME?=CloudSharpCockroachDB
+
+#DEV_DB=appdatabasedev # read db name from .env file
+#DEV_URI="" # read cockroach db uri from .env file
+
+CONFIG_FILE?=config.yaml
+
+#DOCKER_BUILD_TAG?=latest
+
+# targets
+#.PHONY: help all generate dev-database test unit-test coverage lint golint build clean vendor up
+
+help: Makefile ## Print help.
+	@grep -h "##" $(MAKEFILE_LIST) | grep -v grep | sed -e 's/:.*##/#/' | column -c 2 -t -s#
+
+#all: lint test  ## Runs lint checks and tests.
+
+generate: | $(TOOLS_DIR)/oapi-codegen  ## Runs all code generation.
+	@PATH="$(ROOT_DIR)/$(TOOLS_DIR):$$PATH" \
+		go generate ./...
+
+dev-database: | vendor $(TOOLS_DIR)/cockroach  ## Initializes dev database "${DEV_DB}"
+	@$(TOOLS_DIR)/cockroach sql --url "${DEV_URI}" -e "drop database if exists ${DEV_DB}"
+	@$(TOOLS_DIR)/cockroach sql --url "${DEV_URI}" -e "create database ${DEV_DB}"
+	@IDAPI_CRDB_URI="${DEV_URI}" \
+		go run main.go migrate
+
+test: | unit-test  ## Run unit tests.
+
+unit-test: | generate $(TOOLS_DIR)/cockroach  ## Runs unit tests.
+	@echo Running unit tests...
+#	@COCKROACH_BINARY="$(ROOT_DIR)/$(TOOLS_DIR)/cockroach" \
+#		go test -race -cover -short ./...
+
+
+#lint: golint  ## Runs go lint checks.
+
+#golint: | vendor $(TOOLS_DIR)/golangci-lint  ## Runs go lint checks.
+#	@echo Linting Go files...
+#	@$(TOOLS_DIR)/golangci-lint run --build-tags "-tags testtools"
+
+build: vendor generate  ## Builds a binary stored at bin/${APP_NAME}
+	@echo Building image...
+	@CGO_ENABLED=0 go build -buildvcs=false -mod=readonly -v -o bin/${APP_NAME}
+
+clean:  ## Cleans up generated files.
+	@echo Cleaning...
+	@rm -f app
+	@rm -rf ./dist/
+	@rm -rf coverage.out
+	@rm -rf .tools/
+	@go clean -testcache
+
+vendor:  ## Downloads and tidies go modules.
+	@go mod download
+	@go mod tidy
+
+#up: build $(TEST_PRIVKEY_FILE)  ## Builds and runs the service.
+#	bin/${APP_NAME} serve --config ${CONFIG_FILE}
+
+
+# Tools setup
+$(TOOLS_DIR):
+	mkdir -p $(TOOLS_DIR)
+
+$(TOOLS_DIR)/cockroach: | $(TOOLS_DIR)
+	@echo "Downloading cockroach: $(COCKROACH_RELEASE_URL)"
+	@curl --silent --fail "$(COCKROACH_RELEASE_URL)" \
+		| tar -xz --strip-components 1 -C $(TOOLS_DIR) $(COCKROACH_VERSION_FILE)/cockroach
+
+	$@ version
+
+#$(TOOLS_DIR)/golangci-lint: | $(TOOLS_DIR)
+#	@echo "Installing $(GOLANGCI_LINT_REPO)/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)"
+#	@GOBIN=$(ROOT_DIR)/$(TOOLS_DIR) go install $(GOLANGCI_LINT_REPO)/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+#	$@ version
+#	$@ linters
+
+$(TOOLS_DIR)/oapi-codegen: | $(TOOLS_DIR)
+	@echo "Installing $(OAPI_CODEGEN_REPO)/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)"
+	@GOBIN=$(ROOT_DIR)/$(TOOLS_DIR) go install $(OAPI_CODEGEN_REPO)/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
+	$@ -version
