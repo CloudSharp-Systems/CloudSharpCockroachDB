@@ -69,7 +69,7 @@ dev-database: | vendor $(TOOLS_DIR)/cockroach  ## Initializes dev database "${DE
 	@$(TOOLS_DIR)/cockroach sql --url "${DEV_URI}" -e "drop database if exists ${DEV_DB}"
 	@$(TOOLS_DIR)/cockroach sql --url "${DEV_URI}" -e "create database ${DEV_DB}"
 	@IDAPI_CRDB_URI="${DEV_URI}" \
-		go run main.go migrate
+		go run main.go migrate up
 
 test: | unit-test  ## Run unit tests.
 

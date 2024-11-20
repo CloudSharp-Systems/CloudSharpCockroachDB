@@ -280,18 +280,18 @@ $$;
 
 
 -- +goose Down
-DROP PROCEDURE auth.add_app_user;
+DROP PROCEDURE IF EXISTS auth.add_app_user;
 
-DROP FUNCTION auth.get_teams_by_user;
-DROP FUNCTION auth.get_app_identity_user_profile_headers_by_team;
-DROP FUNCTION auth.get_app_identity_user_profile_headers_by_provider;
-DROP FUNCTION auth.get_app_identity_user_profile_header;
+DROP FUNCTION IF EXISTS auth.get_teams_by_user;
+DROP FUNCTION IF EXISTS auth.get_app_identity_user_profile_headers_by_team;
+DROP FUNCTION IF EXISTS auth.get_app_identity_user_profile_headers_by_provider;
+DROP FUNCTION IF EXISTS auth.get_app_identity_user_profile_header;
 
-DROP TABLE auth.tb_app_user_team;
-DROP TABLE auth.tb_app_team;
-DROP TABLE auth.tb_app_user_identity_delete_log;
-DROP TABLE auth.tb_app_user_identity;
-DROP TABLE auth.tb_app_user;
+DROP TABLE IF EXISTS auth.tb_app_user_team;
+DROP TABLE IF EXISTS auth.tb_app_team;
+DROP TABLE IF EXISTS auth.tb_app_user_identity_delete_log;
+DROP TABLE IF EXISTS auth.tb_app_user_identity;
+DROP TABLE IF EXISTS auth.tb_app_user;
 
-DROP SCHEMA auth;
+DROP SCHEMA IF EXISTS auth;
 

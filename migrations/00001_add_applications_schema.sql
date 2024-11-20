@@ -135,16 +135,16 @@ $$;
 
 
 -- +goose Down
-DROP PROCEDURE applications.update_task_statuses;
+DROP PROCEDURE IF EXISTS applications.update_task_statuses;
 
-DROP FUNCTION applications.central_system_log_volume;
+DROP FUNCTION IF EXISTS applications.central_system_log_volume;
 
-DROP VIEW applications.v_app_data_control;
+DROP VIEW IF EXISTS applications.v_app_data_control;
 
-DROP TABLE applications.tb_program_status;
-DROP TABLE applications.tb_central_system_log;
-DROP TABLE applications.tb_app_data_control;
-DROP TABLE applications.tb_app;
+DROP TABLE IF EXISTS applications.tb_program_status;
+DROP TABLE IF EXISTS applications.tb_central_system_log;
+DROP TABLE IF EXISTS applications.tb_app_data_control;
+DROP TABLE IF EXISTS applications.tb_app;
 
-DROP SCHEMA applications;
+DROP SCHEMA IF EXISTS applications;
 
