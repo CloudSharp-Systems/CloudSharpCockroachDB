@@ -174,10 +174,183 @@ $$;
 -- +goose StatementEnd
 
 
+-- +goose StatementBegin
+CREATE OR REPLACE PROCEDURE network.load_balance_least_connections (
+    target_site_id STRING,
+    client_ip STRING,
+    client_thread_id STRING,
+    resource_size INT,
+    OUT host_ip VARCHAR(100),
+    OUT resource_unit INT
+)
+LANGUAGE PLpgSQL AS $$
+DECLARE
+    target_app_id STRING := 'CloudSharpSystemsWeb';
+    data_control_name STRING := 'LOAD_BALANCING_ALGORITHM';
+    algorithm_type STRING := 'LEAST_CONNECTIONS';
+    load_cache_str STRING := 'LOAD_CACHE_';
+    max_cache_load INT := 1000;
+BEGIN
+    -- Initialize output parameter
+    host_ip := NULL;
+
+    -- Call validation procedure
+    CALL network.load_balance_validate_load_cache(target_site_id, max_cache_load);
+
+    -- Select the host IP with the least connection load
+    SELECT RIGHT(control_level, LENGTH(control_level) - LENGTH(load_cache_str)) INTO host_ip
+    FROM applications.tb_app_data_control
+    WHERE app_id = target_app_id
+      AND control_name = data_control_name
+      AND control_type = algorithm_type
+      AND control_level IN (
+          SELECT load_cache_str || f.host_ip
+          FROM network.get_server_load(target_site_id)
+          AS f(site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
+          WHERE network.is_host_responsive(f.server_status, f.ip_status) = 'Y'
+            AND f.net_load_capacity - f.resource_load > resource_size
+      )
+    ORDER BY control_value::FLOAT ASC
+    LIMIT 1;
+
+    -- Update the load value for the selected host
+    IF host_ip IS NOT NULL THEN
+        UPDATE applications.tb_app_data_control
+        SET control_value = (control_value::FLOAT + resource_size::FLOAT)::STRING, is_enabled = 'Y', edit_by = target_app_id, edit_date = current_timestamp
+        WHERE app_id = target_app_id
+          AND control_name = data_control_name
+          AND control_type = algorithm_type
+          AND control_level = load_cache_str || host_ip;
+    END IF;
+
+    -- Set the resource unit output parameter
+    IF host_ip IS NULL THEN
+        resource_unit := -1;
+    ELSE
+        resource_unit := 1;
+    END IF;
+END;
+$$;
+-- +goose StatementEnd
+
+
+
+CREATE TYPE applications.data_control_kv AS (k STRING, v STRING);
+CREATE TYPE network.server_load AS (site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING, row_id INT);
+-- +goose StatementBegin
+CREATE OR REPLACE PROCEDURE network.load_balance_weighted_round_robin(
+    target_site_id STRING,
+    client_ip STRING,
+    client_thread_id STRING,
+    resource_size INT,
+    OUT host_ip STRING,
+    OUT resource_unit INT
+)
+LANGUAGE PLpgSQL AS $$
+DECLARE
+    target_app_id STRING := 'CloudSharpSystemsWeb';
+    data_control_name STRING := 'LOAD_BALANCING_ALGORITHM';
+    algorithm_type STRING := 'WEIGHTED_ROUND_ROBIN';
+    weight_scale FLOAT := 0.1;
+
+    current_max_weight INT;
+    current_load INT;
+    current_index INT;
+
+    data_control applications.data_control_kv[];
+    load_dist network.server_load[];
+
+BEGIN
+    -- Initialize output
+    host_ip := NULL;
+
+    SELECT ARRAY(
+        SELECT ROW(control_level, control_value)::applications.data_control_kv FROM applications.v_app_data_control
+        WHERE control_name = data_control_name AND app_id = target_app_id AND control_type = algorithm_type
+          AND is_app_enabled = 'Y' AND is_control_enabled = 'Y'
+    )
+    INTO data_control;
+
+    SELECT (c).v::INT INTO current_index FROM UNNEST(data_control) AS c WHERE (c).k = 'CURRENT_INDEX';
+    SELECT (c).v::INT INTO current_max_weight FROM UNNEST(data_control) AS c WHERE (c).k = 'CURRENT_MAX_WEIGHT';
+    SELECT (c).v::INT INTO current_load FROM UNNEST(data_control) AS c WHERE (c).k = 'CURRENT_LOAD';
+
+    -- Step 3.1: Select host IP based on load distribution
+    IF current_load < current_max_weight THEN
+        SELECT cte.host_ip INTO host_ip
+        FROM (
+            SELECT *, ROW_NUMBER() OVER (ORDER BY f.serial_no, f.net_load_capacity DESC) AS rn
+            FROM network.get_server_load(target_site_id)
+            AS f(site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
+            WHERE network.is_host_responsive(f.server_status, f.ip_status) = 'Y'
+        ) cte
+        WHERE cte.rn = current_index AND cte.net_load_capacity - cte.resource_load > resource_size;
+
+        current_load := current_load + resource_size;
+    END IF;
+
+    -- Step 3.2: If the current max weight cannot allocate for the new resource, find the next host IP
+    IF host_ip IS NULL THEN
+
+        SELECT ARRAY(
+            SELECT ROW(site_id, serial_no, host_ip, port, server_status, ip_status, net_load_capacity, session_count, resource_load, server_spec, storage, registration_date, last_service_date, location_code, rack_code, ROW_NUMBER() OVER (ORDER BY f.serial_no, f.net_load_capacity DESC))::network.server_load
+            FROM network.get_server_load(target_site_id)
+            AS f(site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
+            WHERE network.is_host_responsive(f.server_status, f.ip_status) = 'Y'
+        ) INTO load_dist;
+
+        SELECT t_host_ip, row_id, (net_load_capacity::FLOAT * weight_scale)::INT
+        INTO host_ip, current_index, current_max_weight
+        FROM (
+            SELECT * FROM (
+                SELECT (ld).host_ip AS t_host_ip, (ld).row_id AS row_id, (ld).net_load_capacity AS net_load_capacity FROM UNNEST(load_dist) AS ld
+                WHERE (ld).row_id > current_index AND (ld).net_load_capacity - (ld).resource_load > resource_size
+                ORDER BY (ld).serial_no, (ld).net_load_capacity DESC LIMIT 1
+            ) candidate_up
+            UNION ALL
+            SELECT * FROM (
+                SELECT (ld).host_ip AS t_host_ip, (ld).row_id AS row_id, (ld).net_load_capacity AS net_load_capacity FROM UNNEST(load_dist) AS ld
+                WHERE (ld).row_id <= current_index AND (ld).net_load_capacity - (ld).resource_load > resource_size
+                ORDER BY (ld).serial_no, (ld).net_load_capacity DESC LIMIT 1
+            ) candidate_down
+        ) next_host_candidate
+        ORDER BY row_id DESC;
+
+        current_load := resource_size;
+    END IF;
+
+    -- Step 3.3: Update round robin load balancer cache data
+    IF host_ip IS NOT NULL THEN
+        resource_unit := 1;
+
+        UPDATE applications.tb_app_data_control SET control_value = current_index::STRING
+        WHERE control_name = data_control_name AND app_id = target_app_id AND control_type = algorithm_type AND control_level = 'CURRENT_INDEX'
+          AND is_enabled = 'Y';
+
+        UPDATE applications.tb_app_data_control SET control_value = current_max_weight::STRING
+        WHERE control_name = data_control_name AND app_id = target_app_id AND control_type = algorithm_type AND control_level = 'CURRENT_MAX_WEIGHT'
+          AND is_enabled = 'Y';
+
+        UPDATE applications.tb_app_data_control SET control_value = current_load::STRING
+        WHERE control_name = data_control_name AND APP_ID = target_app_id AND control_type = algorithm_type AND control_level = 'CURRENT_LOAD'
+          AND is_enabled = 'Y';
+    ELSE
+        resource_unit := -1;
+    END IF;
+
+END;
+$$;
+-- +goose StatementEnd
+
 
 
 
 -- +goose Down
+DROP PROCEDURE IF EXISTS network.load_balance_weighted_round_robin;
+DROP TYPE IF EXISTS network.server_load;
+DROP TYPE IF EXISTS applications.data_control_kv;
+
+DROP PROCEDURE IF EXISTS network.load_balance_least_connections;
 DROP PROCEDURE IF EXISTS network.load_balance_none;
 DROP PROCEDURE IF EXISTS network.load_balance_reset;
 DROP PROCEDURE IF EXISTS network.load_balance_validate_load_cache;
