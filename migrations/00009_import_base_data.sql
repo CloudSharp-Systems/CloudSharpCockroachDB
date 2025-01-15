@@ -6,8 +6,13 @@
 IMPORT INTO applications.tb_app CSV DATA('gs://temp_db_csv/tb_app.csv?AUTH=specified&CREDENTIALS=${GCP_CRED}') 
 WITH skip = '1', DETACHED;
 
+IMPORT INTO applications.tb_app_data_control CSV DATA('gs://temp_db_csv/tb_app_data_control.csv?AUTH=specified&CREDENTIALS=${GCP_CRED}') 
+WITH skip = '1', DETACHED;
+
+
 
 
 
 -- +goose Down
+DELETE FROM applications.tb_app_data_control;
 DELETE FROM applications.tb_app;
