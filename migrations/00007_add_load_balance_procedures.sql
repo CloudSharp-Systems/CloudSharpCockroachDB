@@ -93,7 +93,7 @@ BEGIN
     -- Reset caches for WEIGHTED_ROUND_ROBIN
     IF old_algorithm = 'WEIGHTED_ROUND_ROBIN' THEN
         SELECT net_load_capacity INTO load_capacity FROM network.get_server_load(target_site_id)
-        AS f(site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
+        -- AS f(site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
         WHERE network.is_host_responsive(server_status, ip_status) = 'Y'
         ORDER BY net_load_capacity DESC LIMIT 1;
 
@@ -156,10 +156,10 @@ BEGIN
     host_ip := NULL;
 
     -- Fetch the first responsive host IP
-    SELECT target_host_ip INTO host_ip
-    FROM network.get_server_load(target_site_id)
-    AS f(site_id STRING, serial_no STRING, target_host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
-    WHERE network.is_host_responsive(server_status, ip_status) = 'Y'
+    SELECT f.host_ip INTO host_ip
+    FROM network.get_server_load(target_site_id) AS f
+    -- AS f(site_id STRING, serial_no STRING, target_host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
+    WHERE network.is_host_responsive(f.server_status, f.ip_status) = 'Y'
     LIMIT 1;
 
     -- Set the resource unit based on host_ip availability
@@ -205,8 +205,8 @@ BEGIN
       AND control_type = algorithm_type
       AND control_level IN (
           SELECT load_cache_str || f.host_ip
-          FROM network.get_server_load(target_site_id)
-          AS f(site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
+          FROM network.get_server_load(target_site_id) AS f
+          -- AS f(site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
           WHERE network.is_host_responsive(f.server_status, f.ip_status) = 'Y'
             AND f.net_load_capacity - f.resource_load > resource_size
       )
@@ -283,8 +283,8 @@ BEGIN
         SELECT cte.host_ip INTO host_ip
         FROM (
             SELECT *, ROW_NUMBER() OVER (ORDER BY f.serial_no, f.net_load_capacity DESC) AS rn
-            FROM network.get_server_load(target_site_id)
-            AS f(site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
+            FROM network.get_server_load(target_site_id) AS f
+            -- AS f(site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
             WHERE network.is_host_responsive(f.server_status, f.ip_status) = 'Y'
         ) cte
         WHERE cte.rn = current_index AND cte.net_load_capacity - cte.resource_load > resource_size;
@@ -298,12 +298,12 @@ BEGIN
         SELECT ARRAY(
             SELECT JSON_BUILD_OBJECT(
 		'serial_no', serial_no,
-		't_host_ip', t_host_ip,
+		't_host_ip', f.host_ip,
 		'net_load_capacity', net_load_capacity,
 		'resource_load', resource_load,
 		'row_id', ROW_NUMBER() OVER (ORDER BY f.serial_no, f.net_load_capacity DESC)
-	    ) FROM network.get_server_load(target_site_id)
-            AS f(site_id STRING, serial_no STRING, t_host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
+	    ) FROM network.get_server_load(target_site_id) AS f
+            -- AS f(site_id STRING, serial_no STRING, t_host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
             WHERE network.is_host_responsive(f.server_status, f.ip_status) = 'Y'
         ) INTO load_dist;
 
@@ -385,7 +385,7 @@ BEGIN
     -- Fetch max capacity
     SELECT MAX(net_load_capacity) INTO max_capacity
     FROM network.get_server_load(target_site_id)
-    AS f(site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
+    -- AS f(site_id STRING, serial_no STRING, host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
     WHERE network.is_host_responsive(server_status, ip_status) = 'Y';
 
     -- Validate load cache
@@ -408,18 +408,18 @@ BEGIN
             WHERE app_id = target_app_id AND control_name = data_control_name AND control_type = algorithm_type
               --AND control_level LIKE load_cache_str || '%'
               AND control_level IN (
-                  SELECT load_cache_str || t_host_ip
-                  FROM network.get_server_load(target_site_id)
-                  AS f(site_id STRING, serial_no STRING, t_host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
-                  WHERE network.is_host_responsive(server_status, ip_status) = 'Y' AND net_load_capacity - resource_load > resource_size
+                  SELECT load_cache_str || f.host_ip
+                  FROM network.get_server_load(target_site_id) AS f
+                  -- AS f(site_id STRING, serial_no STRING, t_host_ip STRING, port STRING, server_status STRING, ip_status STRING, net_load_capacity INT, session_count INT, resource_load INT, server_spec STRING, storage STRING, registration_date DATE, last_service_date DATE, location_code STRING, rack_code STRING)
+                  WHERE network.is_host_responsive(f.server_status, f.ip_status) = 'Y' AND f.net_load_capacity - f.resource_load > resource_size
               )
         ) dist ON website_host.host_ip = dist.host_ip
     ) INTO weighted_load_map;
 
     -- Log the distribution of weighted loads
     INSERT INTO applications.tb_central_system_log (
-      log_id, app_id, system_name, trace_id, record_type, 
-      record_value1, record_value2, record_value3, record_value4, record_value5, 
+      log_id, app_id, system_name, trace_id, record_type,
+      record_value1, record_value2, record_value3, record_value4, record_value5,
       record_message, record_note, edit_by, edit_time
     )
     SELECT experimental_strftime(CURRENT_TIMESTAMP, '%Y%m%d%H%M%S') || '_' || gen_random_uuid(),
@@ -534,7 +534,6 @@ $$;
 DROP PROCEDURE IF EXISTS network.load_balance;
 DROP PROCEDURE IF EXISTS network.load_balance_weighted_fault_avoidance;
 DROP PROCEDURE IF EXISTS network.load_balance_weighted_round_robin;
---DROP TYPE IF EXISTS network.server_load;
 --DROP TYPE IF EXISTS applications.data_control_kv;
 DROP PROCEDURE IF EXISTS network.load_balance_least_connections;
 DROP PROCEDURE IF EXISTS network.load_balance_none;
