@@ -71,12 +71,31 @@ CREATE TABLE auth.tb_app_user_team (
     CONSTRAINT fk_userid FOREIGN KEY (userid) REFERENCES auth.tb_app_user (userid)
 );
 
+
+
+
+
+
+
+CREATE TYPE auth.rec_app_identity_user_profile_header AS (
+	first_name STRING(100),
+	last_name STRING(100),
+	name_alias STRING(200),
+	phone_number STRING(50),
+	profile_picture STRING(500),
+	notes STRING(500),
+	identity_provider STRING(100),
+	username_alias STRING(200),
+	language_code STRING(10)
+);
+
+
 -- +goose StatementBegin
 CREATE FUNCTION auth.get_app_identity_user_profile_header(
     target_identity_provider STRING(100),
     target_userid STRING(100)
 )
-RETURNS SETOF RECORD LANGUAGE SQL AS $$
+RETURNS SETOF auth.rec_app_identity_user_profile_header LANGUAGE SQL AS $$
     SELECT
         u.first_name,
         u.last_name,
@@ -101,7 +120,7 @@ $$;
 CREATE FUNCTION auth.get_app_identity_user_profile_headers_by_provider(
     target_identity_provider STRING(100),
     target_team_id STRING(100)
-) RETURNS SETOF RECORD LANGUAGE SQL AS $$
+) RETURNS SETOF auth.rec_app_identity_user_profile_header LANGUAGE SQL AS $$
     SELECT u.first_name, u.last_name, u.name_alias, u.phone_number, u.profile_picture, u.notes, i.identity_provider, i.username_alias, i.language_code
     FROM (
         SELECT ut.* FROM auth.tb_app_user_team ut WHERE ut.team_id = target_team_id AND ut.is_enabled = 'Y'
@@ -119,11 +138,11 @@ CREATE FUNCTION auth.get_app_identity_user_profile_headers_by_team(
     target_identity_provider STRING(100),
     target_team_id STRING(100)
 )
-RETURNS SETOF RECORD LANGUAGE SQL AS $$
+RETURNS SETOF auth.rec_app_identity_user_profile_header LANGUAGE SQL AS $$
 
     -- 1. query profile from the target provider
     SELECT * FROM auth.get_app_identity_user_profile_headers_by_provider(target_identity_provider, target_team_id)
-    AS head_by_p(first_name STRING, last_name STRING, name_alias STRING, phone_number STRING, profile_picture STRING, notes STRING, identity_provider STRING, username_alias STRING, language_code STRING)
+    -- AS head_by_p(first_name STRING, last_name STRING, name_alias STRING, phone_number STRING, profile_picture STRING, notes STRING, identity_provider STRING, username_alias STRING, language_code STRING)
 
     UNION ALL
 
@@ -131,12 +150,13 @@ RETURNS SETOF RECORD LANGUAGE SQL AS $$
     SELECT * FROM auth.get_app_identity_user_profile_headers_by_provider(
     	(SELECT control_value FROM applications.tb_app_data_control
         WHERE app_id = 'CloudSharpSystemsWeb' AND control_name = 'IDENTITY_PROVIDER' AND control_type = 'PROVIDER_NAME' AND is_enabled = 'Y' LIMIT 1),
-    target_team_id)
-    AS head_by_cs(first_name STRING, last_name STRING, name_alias STRING, phone_number STRING, profile_picture STRING, notes STRING, identity_provider STRING, username_alias STRING, language_code STRING)
+    target_team_id) head_by_cs
+    -- AS head_by_cs(first_name STRING, last_name STRING, name_alias STRING, phone_number STRING, profile_picture STRING, notes STRING, identity_provider STRING, username_alias STRING, language_code STRING)
     -- exclude profiles already collected in (1)
     WHERE head_by_cs.username_alias NOT IN (
         SELECT head_by_psub.username_alias FROM auth.get_app_identity_user_profile_headers_by_provider(target_identity_provider, target_team_id)
-        AS head_by_psub(first_name STRING, last_name STRING, name_alias STRING, phone_number STRING, profile_picture STRING, notes STRING, identity_provider STRING, username_alias STRING, language_code STRING)
+	head_by_psub
+        --AS head_by_psub(first_name STRING, last_name STRING, name_alias STRING, phone_number STRING, profile_picture STRING, notes STRING, identity_provider STRING, username_alias STRING, language_code STRING)
     );
 $$;
 -- +goose StatementEnd
@@ -148,7 +168,7 @@ CREATE FUNCTION auth.get_teams_by_user(
     target_userid STRING(100),
     with_default_account CHAR(1)
 )
-RETURNS SETOF RECORD LANGUAGE SQL AS $$
+RETURNS SETOF auth.tb_app_team LANGUAGE SQL AS $$
     SELECT * FROM auth.tb_app_team
     WHERE app_id = target_app_id AND team_id IN (
         SELECT team_id FROM auth.tb_app_user_team
@@ -286,6 +306,7 @@ DROP FUNCTION IF EXISTS auth.get_teams_by_user;
 DROP FUNCTION IF EXISTS auth.get_app_identity_user_profile_headers_by_team;
 DROP FUNCTION IF EXISTS auth.get_app_identity_user_profile_headers_by_provider;
 DROP FUNCTION IF EXISTS auth.get_app_identity_user_profile_header;
+DROP TYPE IF EXISTS auth.rec_app_identity_user_profile_header;
 
 DROP TABLE IF EXISTS auth.tb_app_user_team;
 DROP TABLE IF EXISTS auth.tb_app_team;

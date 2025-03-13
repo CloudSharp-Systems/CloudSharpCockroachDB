@@ -84,13 +84,19 @@ ON c.app_id = a.app_id;
 
 
 
+CREATE TYPE applications.rec_central_system_log_volume AS (
+	app_id STRING(100),
+	log_date DATE,
+	log_count INT
+);
+
 -- +goose StatementBegin
 CREATE FUNCTION applications.central_system_log_volume(date_offset INT, target_app_id STRING)
-RETURNS SETOF RECORD AS $$
+RETURNS SETOF applications.rec_central_system_log_volume AS $$
 SELECT
     target_app_id AS app_id,
     log_date AS log_date,
-    SUM(log_count) AS log_count
+    SUM(log_count)::INT AS log_count
 FROM (
     SELECT CAST(edit_time AS DATE) AS log_date, COUNT(*) AS log_count
     FROM applications.tb_central_system_log
@@ -99,7 +105,7 @@ FROM (
 
     UNION ALL
 
-    SELECT pads.log_date AS log_date, 0 AS log_count
+    SELECT pads.log_date AS log_date, 0::INT AS log_count
     FROM (
 	SELECT current_date - offset_index.day_index AS log_date
 	FROM (SELECT generate_series(0, date_offset) AS day_index) offset_index
@@ -136,6 +142,7 @@ $$;
 
 -- +goose Down
 DROP PROCEDURE IF EXISTS applications.update_task_statuses;
+DROP TYPE IF EXISTS applications.rec_central_system_log_volume;
 
 DROP FUNCTION IF EXISTS applications.central_system_log_volume;
 
