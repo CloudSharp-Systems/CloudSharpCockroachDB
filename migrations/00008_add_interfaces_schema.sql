@@ -33,9 +33,24 @@ CREATE TABLE interfaces.tb_website_menu_item (
     CONSTRAINT fk_header_id FOREIGN KEY (header_id) REFERENCES interfaces.tb_website_menu_header (header_id)
 );
 
+
+
+
+
+CREATE TYPE interfaces.rec_menu_item AS (
+	menu_display_name STRING(100),
+	menu_ranking INT,
+	item_name STRING(100),
+	display_name STRING(100),
+	route_type STRING(50),
+	route STRING,
+	icon STRING,
+	ranking INT
+);
+
 -- +goose StatementBegin
 CREATE FUNCTION interfaces.get_menu_items_by_menu(target_site_id STRING, target_menu_name STRING, target_user_id STRING)
-RETURNS SETOF RECORD LANGUAGE SQL AS $$
+RETURNS SETOF interfaces.rec_menu_item LANGUAGE SQL AS $$
     SELECT
         menu_header.display_name AS menu_display_name,
         -1 AS menu_ranking,
@@ -57,7 +72,7 @@ $$;
 
 -- +goose StatementBegin
 CREATE FUNCTION interfaces.get_submenu_items_by_menu(target_site_id STRING, target_menu_name STRING, target_user_id STRING)
-RETURNS SETOF RECORD LANGUAGE SQL AS $$
+RETURNS SETOF interfaces.rec_menu_item LANGUAGE SQL AS $$
 SELECT
     menu_header.display_name AS menu_display_name,
     menu_header.ranking AS menu_ranking,
@@ -66,13 +81,12 @@ SELECT
     menu_item.route_type,
     menu_item.route,
     menu_item.icon,
-    menu_item.ranking AS item_ranking
+    menu_item.ranking --AS item_ranking
 FROM (
     SELECT h.header_id, h.display_name, main_menu.ranking
     FROM interfaces.tb_website_menu_header h
     INNER JOIN (
         SELECT * FROM INTERFACES.GET_MENU_ITEMS_BY_MENU(target_site_id, target_menu_name, target_user_id)
-        AS f(menu_display_name STRING, menu_ranking INT, item_name STRING, display_name STRING, route_type STRING, route STRING, icon STRING, ranking INT)
     ) main_menu
     ON h.header_id = main_menu.route
     WHERE h.is_enabled = 'Y'
@@ -210,6 +224,7 @@ DROP PROCEDURE IF EXISTS interfaces.validate_website_menu_route;
 
 DROP FUNCTION IF EXISTS interfaces.get_submenu_items_by_menu;
 DROP FUNCTION IF EXISTS interfaces.get_menu_items_by_menu;
+DROP TYPE IF EXISTS interfaces.rec_menu_item;
 
 DROP TABLE IF EXISTS interfaces.tb_website_menu_item;
 DROP TABLE IF EXISTS interfaces.tb_website_menu_header;
