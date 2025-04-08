@@ -142,9 +142,9 @@ $$;
 
 -- +goose Down
 DROP PROCEDURE IF EXISTS applications.update_task_statuses;
-DROP TYPE IF EXISTS applications.rec_central_system_log_volume;
 
 DROP FUNCTION IF EXISTS applications.central_system_log_volume;
+DROP TYPE IF EXISTS applications.rec_central_system_log_volume;
 
 DROP VIEW IF EXISTS applications.v_app_data_control;
 
