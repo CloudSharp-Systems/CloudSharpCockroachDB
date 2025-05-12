@@ -38,7 +38,40 @@ CREATE TABLE communications.tb_message_backlog (
 );
 
 
+
+
+-- +goose StatementBegin
+CREATE PROCEDURE communications.update_message_backlog_statuses(
+    target_message_type STRING,
+    target_edit_by STRING
+)
+LANGUAGE PLpgSQL AS $$
+BEGIN
+    -- Update backlogs status of all message types if not specified
+    IF target_message_type IS NULL THEN
+		UPDATE communications.tb_message_backlog
+		SET status = 'PASTDUE', edit_by = target_edit_by, edit_time = CURRENT_TIMESTAMP
+		WHERE status IN ('AWAITING') AND due_time < CURRENT_TIMESTAMP;
+
+		RETURN;
+	END IF;
+	
+    -- Update backlogs status of the specified message type:
+	UPDATE communications.tb_message_backlog
+	SET status = 'PASTDUE', edit_by = target_edit_by, edit_time = CURRENT_TIMESTAMP
+	WHERE status IN ('AWAITING') AND due_time < CURRENT_TIMESTAMP AND spec_id IN (
+		SELECT S.spec_id FROM communications.tb_message_backlog_spec S
+		WHERE S.message_type = target_message_type
+	);
+END;
+$$;
+-- +goose StatementEnd
+
+
+
 -- +goose Down
+DROP PROCEDURE IF EXISTS communications.update_message_backlog_statuses;
+
 DROP TABLE IF EXISTS communications.tb_message_backlog;
 DROP TABLE IF EXISTS communications.tb_message_backlog_spec;
 DROP TABLE IF EXISTS communications.tb_email_header;
