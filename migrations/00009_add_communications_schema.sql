@@ -15,6 +15,7 @@ CREATE TABLE communications.tb_email_header (
 
 CREATE TABLE communications.tb_message_backlog_spec (
 	spec_id STRING(100) NOT NULL PRIMARY KEY DEFAULT experimental_strftime(CURRENT_TIMESTAMP, '%Y%m%d%H%M%S') || '_' || gen_random_uuid(),
+	userid STRING(100) NOT NULL,
 	message_type STRING(20) NOT NULL,
 	template_id STRING(100) NULL,
 	schedule STRING(20) NOT NULL, -- CRON expression
@@ -23,7 +24,8 @@ CREATE TABLE communications.tb_message_backlog_spec (
 	is_in_audit CHAR NOT NULL CHECK (is_in_audit IN ('Y', 'N')),
 	is_enabled CHAR NOT NULL CHECK (is_enabled IN ('Y', 'N')),
 	edit_by STRING(100) NOT NULL,
-	edit_time TIMESTAMP DEFAULT current_timestamp NOT NULL
+	edit_time TIMESTAMP DEFAULT current_timestamp NOT NULL,
+	CONSTRAINT fk_app_user FOREIGN KEY (userid) REFERENCES applications.tb_app_user (userid)
 );
 
 CREATE TABLE communications.tb_message_backlog (
