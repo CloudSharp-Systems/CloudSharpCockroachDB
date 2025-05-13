@@ -25,7 +25,7 @@ CREATE TABLE communications.tb_message_backlog_spec (
 	is_enabled CHAR NOT NULL CHECK (is_enabled IN ('Y', 'N')),
 	edit_by STRING(100) NOT NULL,
 	edit_time TIMESTAMP DEFAULT current_timestamp NOT NULL,
-	CONSTRAINT fk_app_user FOREIGN KEY (userid) REFERENCES applications.tb_app_user (userid)
+	CONSTRAINT fk_app_user FOREIGN KEY (userid) REFERENCES auth.tb_app_user (userid)
 );
 
 CREATE TABLE communications.tb_message_backlog (
@@ -70,8 +70,26 @@ $$;
 -- +goose StatementEnd
 
 
+-- +goose StatementBegin
+CREATE FUNCTION communications.get_message_backlog_by_user(
+    target_userid STRING,
+	target_type STRING, -- optional
+	target_status STRING -- optional
+)
+RETURNS SETOF communications.tb_message_backlog LANGUAGE SQL AS $$
+	SELECT * FROM communications.tb_message_backlog B WHERE B.spec_id IN (
+		SELECT S.spec_id FROM communications.tb_message_backlog_spec S
+		WHERE S.userid = target_userid 
+		AND (target_type IS NULL OR S.message_type = target_type)
+	) AND (target_status IS NULL OR B.status = target_status);
+$$;
+-- +goose StatementEnd
+
+
 
 -- +goose Down
+DROP FUNCTION IF EXISTS communications.get_message_backlog_by_user;
+
 DROP PROCEDURE IF EXISTS communications.update_message_backlog_statuses;
 
 DROP TABLE IF EXISTS communications.tb_message_backlog;
