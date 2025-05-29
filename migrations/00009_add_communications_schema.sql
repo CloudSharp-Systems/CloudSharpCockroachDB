@@ -59,11 +59,11 @@ BEGIN
 	END IF;
 	
     -- Update backlogs status of the specified message type:
-	UPDATE communications.tb_message_backlog
+	UPDATE communications.tb_message_backlog B
 	SET status = 'PASTDUE', edit_by = target_edit_by, edit_time = CURRENT_TIMESTAMP
-	WHERE status IN ('AWAITING') AND due_time < CURRENT_TIMESTAMP AND spec_id IN (
+	WHERE status IN ('AWAITING') AND due_time < CURRENT_TIMESTAMP AND EXISTS (
 		SELECT S.spec_id FROM communications.tb_message_backlog_spec S
-		WHERE S.message_type = target_message_type
+		WHERE S.spec_id = B.spec_id AND S.message_type = target_message_type
 	);
 END;
 $$;
