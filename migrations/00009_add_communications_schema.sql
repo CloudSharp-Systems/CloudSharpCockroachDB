@@ -81,10 +81,11 @@ LANGUAGE PLpgSQL AS $$
 DECLARE
     message_userid STRING := NULL;
 	backlog_userid STRING := NULL;
+	backlog_spec_id STRING := NULL;
 	backlog_message_type STRING := NULL;
 BEGIN
 	-- Query backlog spec user and message type
-	SELECT userid, message_type INTO backlog_userid, backlog_message_type
+	SELECT userid, spec_id, message_type INTO backlog_userid, backlog_spec_id, backlog_message_type
 	FROM communications.tb_message_backlog_spec
 	WHERE spec_id IN (
 		SELECT B.spec_id FROM communications.tb_message_backlog B 
@@ -109,6 +110,36 @@ BEGIN
 	SET status = 'RESOLVED', note = backlog_message_type || ' ID: ' || target_message_id, edit_by = target_edit_by, edit_time = CURRENT_TIMESTAMP
 	WHERE backlog_id = target_backlog_id;
 	
+	-- Disable spec if this is a one time backlog:
+	UPDATE communications.tb_message_backlog_spec
+	SET is_enabled = 'N', edit_by = target_edit_by, edit_time = CURRENT_TIMESTAMP
+	WHERE spec_id = backlog_spec_id AND audit_schedule IN ('HOLIDAY', 'ONETIME');
+
+END;
+$$;
+-- +goose StatementEnd
+
+
+-- +goose StatementBegin
+CREATE PROCEDURE communications.disable_message_backlog_spec(
+	target_spec_id STRING,
+	cancel_backlogs CHAR,
+	target_edit_by STRING
+) LANGUAGE PLpgSQL AS $$
+BEGIN
+
+	-- Cancel backlogs:
+	IF cancel_backlogs = 'Y' THEN 
+		UPDATE communications.tb_message_backlog
+		SET status = 'CANCELLED', note = 'Cancelled with backlog spec disabling.', edit_by = target_edit_by, edit_time = CURRENT_TIMESTAMP
+		WHERE spec_id = target_spec_id AND status IN ('AWAITING', 'PASTDUE');
+	END IF;
+
+	-- Disable spec:
+	UPDATE communications.tb_message_backlog_spec
+	SET is_enabled = 'N', edit_by = target_edit_by, edit_time = CURRENT_TIMESTAMP
+	WHERE spec_id = target_spec_id;
+
 END;
 $$;
 -- +goose StatementEnd
@@ -134,6 +165,7 @@ $$;
 -- +goose Down
 DROP FUNCTION IF EXISTS communications.get_message_backlog_by_user;
 
+DROP PROCEDURE IF EXISTS communications.disable_message_backlog_spec;
 DROP PROCEDURE IF EXISTS communications.resolve_message_backlog;
 DROP PROCEDURE IF EXISTS communications.update_message_backlog_statuses;
 
